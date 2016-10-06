@@ -1293,133 +1293,20 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
 
   public ResultSet getTables(String catalog, String schemaPattern, String tableNamePattern,
       String types[]) throws SQLException {
-    String select;
-    String orderby;
-    String useSchemas;
-    if (connection.haveMinimumServerVersion(ServerVersion.v7_3)) {
-      useSchemas = "SCHEMAS";
-      select = "SELECT NULL AS TABLE_CAT, n.nspname AS TABLE_SCHEM, c.relname AS TABLE_NAME, "
-          + " CASE n.nspname ~ '^pg_' OR n.nspname = 'information_schema' "
-          + " WHEN true THEN CASE "
-          + " WHEN n.nspname = 'pg_catalog' OR n.nspname = 'information_schema' THEN CASE c.relkind "
-          + "  WHEN 'r' THEN 'SYSTEM TABLE' "
-          + "  WHEN 'v' THEN 'SYSTEM VIEW' "
-          + "  WHEN 'i' THEN 'SYSTEM INDEX' "
-          + "  ELSE NULL "
-          + "  END "
-          + " WHEN n.nspname = 'pg_toast' THEN CASE c.relkind "
-          + "  WHEN 'r' THEN 'SYSTEM TOAST TABLE' "
-          + "  WHEN 'i' THEN 'SYSTEM TOAST INDEX' "
-          + "  ELSE NULL "
-          + "  END "
-          + " ELSE CASE c.relkind "
-          + "  WHEN 'r' THEN 'TEMPORARY TABLE' "
-          + "  WHEN 'i' THEN 'TEMPORARY INDEX' "
-          + "  WHEN 'S' THEN 'TEMPORARY SEQUENCE' "
-          + "  WHEN 'v' THEN 'TEMPORARY VIEW' "
-          + "  ELSE NULL "
-          + "  END "
-          + " END "
-          + " WHEN false THEN CASE c.relkind "
-          + " WHEN 'r' THEN 'TABLE' "
-          + " WHEN 'i' THEN 'INDEX' "
-          + " WHEN 'S' THEN 'SEQUENCE' "
-          + " WHEN 'v' THEN 'VIEW' "
-          + " WHEN 'c' THEN 'TYPE' "
-          + " WHEN 'f' THEN 'FOREIGN TABLE' "
-          + " WHEN 'm' THEN 'MATERIALIZED VIEW' "
-          + " ELSE NULL "
-          + " END "
-          + " ELSE NULL "
-          + " END "
-          + " AS TABLE_TYPE, d.description AS REMARKS "
-          + " FROM pg_catalog.pg_namespace n, pg_catalog.pg_class c "
-          + " LEFT JOIN pg_catalog.pg_description d ON (c.oid = d.objoid AND d.objsubid = 0) "
-          + " LEFT JOIN pg_catalog.pg_class dc ON (d.classoid=dc.oid AND dc.relname='pg_class') "
-          + " LEFT JOIN pg_catalog.pg_namespace dn ON (dn.oid=dc.relnamespace AND dn.nspname='pg_catalog') "
-          + " WHERE c.relnamespace = n.oid ";
-      if (schemaPattern != null && !"".equals(schemaPattern)) {
-        select += " AND n.nspname LIKE " + escapeQuotes(schemaPattern);
-      }
-      orderby = " ORDER BY TABLE_TYPE,TABLE_SCHEM,TABLE_NAME ";
-    } else {
-      useSchemas = "NOSCHEMAS";
-      String tableType = ""
-          + " CASE c.relname ~ '^pg_' "
-          + " WHEN true THEN CASE c.relname ~ '^pg_toast_' "
-          + " WHEN true THEN CASE c.relkind "
-          + "  WHEN 'r' THEN 'SYSTEM TOAST TABLE' "
-          + "  WHEN 'i' THEN 'SYSTEM TOAST INDEX' "
-          + "  ELSE NULL "
-          + "  END "
-          + " WHEN false THEN CASE c.relname ~ '^pg_temp_' "
-          + "  WHEN true THEN CASE c.relkind "
-          + "   WHEN 'r' THEN 'TEMPORARY TABLE' "
-          + "   WHEN 'i' THEN 'TEMPORARY INDEX' "
-          + "   WHEN 'S' THEN 'TEMPORARY SEQUENCE' "
-          + "   WHEN 'v' THEN 'TEMPORARY VIEW' "
-          + "   ELSE NULL "
-          + "   END "
-          + "  WHEN false THEN CASE c.relkind "
-          + "   WHEN 'r' THEN 'SYSTEM TABLE' "
-          + "   WHEN 'v' THEN 'SYSTEM VIEW' "
-          + "   WHEN 'i' THEN 'SYSTEM INDEX' "
-          + "   ELSE NULL "
-          + "   END "
-          + "  ELSE NULL "
-          + "  END "
-          + " ELSE NULL "
-          + " END "
-          + " WHEN false THEN CASE c.relkind "
-          + " WHEN 'r' THEN 'TABLE' "
-          + " WHEN 'i' THEN 'INDEX' "
-          + " WHEN 'S' THEN 'SEQUENCE' "
-          + " WHEN 'v' THEN 'VIEW' "
-          + " WHEN 'c' THEN 'TYPE' "
-          + " ELSE NULL "
-          + " END "
-          + " ELSE NULL "
-          + " END ";
-      orderby = " ORDER BY TABLE_TYPE,TABLE_NAME ";
-      if (connection.haveMinimumServerVersion(ServerVersion.v7_2)) {
-        select =
-            "SELECT NULL AS TABLE_CAT, NULL AS TABLE_SCHEM, c.relname AS TABLE_NAME, " + tableType
-                + " AS TABLE_TYPE, d.description AS REMARKS "
-                + " FROM pg_class c "
-                + " LEFT JOIN pg_description d ON (c.oid=d.objoid AND d.objsubid = 0) "
-                + " LEFT JOIN pg_class dc ON (d.classoid = dc.oid AND dc.relname='pg_class') "
-                + " WHERE true ";
-      } else if (connection.haveMinimumServerVersion(ServerVersion.v7_1)) {
-        select =
-            "SELECT NULL AS TABLE_CAT, NULL AS TABLE_SCHEM, c.relname AS TABLE_NAME, " + tableType
-                + " AS TABLE_TYPE, d.description AS REMARKS "
-                + " FROM pg_class c "
-                + " LEFT JOIN pg_description d ON (c.oid=d.objoid) "
-                + " WHERE true ";
-      } else {
-        select =
-            "SELECT NULL AS TABLE_CAT, NULL AS TABLE_SCHEM, c.relname AS TABLE_NAME, " + tableType
-                + " AS TABLE_TYPE, NULL AS REMARKS "
-                + " FROM pg_class c "
-                + " WHERE true ";
-      }
+    String sql = "SELECT schema_name, table_name FROM information_schema.tables";
+    List<String> whereConditions = new ArrayList<String>();
+    if (schemaPattern != null && schemaPattern.equals("")) {
+      whereConditions.add("schema_name IS NULL");
+    } else if (schemaPattern != null) {
+      whereConditions.add("schema_name LIKE '" + schemaPattern + "'");
     }
-
-    if (tableNamePattern != null && !"".equals(tableNamePattern)) {
-      select += " AND c.relname LIKE " + escapeQuotes(tableNamePattern);
+    if (tableNamePattern != null) {
+      whereConditions.add("table_name LIKE '" + tableNamePattern + "'");
     }
-    if (types != null) {
-      select += " AND (false ";
-      for (String type : types) {
-        Map<String, String> clauses = tableTypeClauses.get(type);
-        if (clauses != null) {
-          String clause = clauses.get(useSchemas);
-          select += " OR ( " + clause + " ) ";
-        }
-      }
-      select += ") ";
+    if (whereConditions.size() > 0) {
+      sql = sql + " WHERE " + String.join(" AND ", whereConditions);
     }
-    String sql = select + orderby;
+    sql = sql + " ORDER BY schema_name, table_name";
 
     return createMetaDataStatement().executeQuery(sql);
   }
